@@ -23,7 +23,9 @@ import com.gzeinnumer.chatapppart2.databinding.ActivityMainBinding;
 import com.gzeinnumer.chatapppart2.fragment.ChatsFragment;
 import com.gzeinnumer.chatapppart2.fragment.ProfileFragment;
 import com.gzeinnumer.chatapppart2.fragment.UsersFragment;
+import com.gzeinnumer.chatapppart2.model.Chat;
 import com.gzeinnumer.chatapppart2.model.User;
+import com.gzeinnumer.chatapppart2.notification.Data;
 
 import java.util.HashMap;
 
@@ -92,13 +94,36 @@ public class MainActivity extends AppCompatActivity {
 
     //todo 23
     private void initPager() {
-        ViewPagerAdapter viewPagerAdapter = new ViewPagerAdapter(getSupportFragmentManager(), FragmentPagerAdapter.BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT);
-        viewPagerAdapter.addFragment(new ChatsFragment(), "Chats");
-        viewPagerAdapter.addFragment(new UsersFragment(), "Users");
-        viewPagerAdapter.addFragment(new ProfileFragment(), "Profile");
+        reference = FirebaseDatabase.getInstance().getReference("Chats");
+        reference.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                int unRead = 0;
+                for(DataSnapshot snapshot: dataSnapshot.getChildren()){
+                    Chat chat = snapshot.getValue(Chat.class);
+                    if(chat.getReceiver().equals(firebaseUser.getUid()) && !chat.getIsseen()){
+                        unRead++;
+                    }
+                }
+                ViewPagerAdapter viewPagerAdapter = new ViewPagerAdapter(getSupportFragmentManager(), FragmentPagerAdapter.BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT);
+                if(unRead == 0){
+                    viewPagerAdapter.addFragment(new ChatsFragment(), "Chats");
+                } else {
+                    viewPagerAdapter.addFragment(new ChatsFragment(), "("+unRead+")"+"Chats");
+                }
+                viewPagerAdapter.addFragment(new UsersFragment(), "Users");
+                viewPagerAdapter.addFragment(new ProfileFragment(), "Profile");
 
-        binding.viewPager.setAdapter(viewPagerAdapter);
-        binding.tabLayout.setupWithViewPager(binding.viewPager);
+                binding.viewPager.setAdapter(viewPagerAdapter);
+                binding.tabLayout.setupWithViewPager(binding.viewPager);
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError databaseError) {
+
+            }
+        });
+
     }
 
     //todo 61 part 12 start

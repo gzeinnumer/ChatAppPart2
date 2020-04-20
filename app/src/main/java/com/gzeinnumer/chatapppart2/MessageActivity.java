@@ -6,7 +6,9 @@ import androidx.appcompat.widget.Toolbar;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Toast;
 
@@ -17,15 +19,26 @@ import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.Query;
 import com.google.firebase.database.ValueEventListener;
 import com.gzeinnumer.chatapppart2.adapter.MessageAdapter;
 import com.gzeinnumer.chatapppart2.databinding.ActivityMessageBinding;
 import com.gzeinnumer.chatapppart2.model.Chat;
 import com.gzeinnumer.chatapppart2.model.User;
+import com.gzeinnumer.chatapppart2.notification.APIService;
+import com.gzeinnumer.chatapppart2.notification.Client;
+import com.gzeinnumer.chatapppart2.notification.Data;
+import com.gzeinnumer.chatapppart2.notification.MyResponse;
+import com.gzeinnumer.chatapppart2.notification.Sender;
+import com.gzeinnumer.chatapppart2.notification.Token;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
 
 //todo 30 part 6 start
 public class MessageActivity extends AppCompatActivity {
@@ -35,6 +48,7 @@ public class MessageActivity extends AppCompatActivity {
     DatabaseReference reference;
     ActivityMessageBinding binding;
     String userId;
+    boolean notify = false;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -85,6 +99,9 @@ public class MessageActivity extends AppCompatActivity {
 
         //todo 68 part 14 start
         seenMessage(userId);
+
+        //todo 85
+        initFCM();
     }
 
     //todo 37
@@ -92,6 +109,7 @@ public class MessageActivity extends AppCompatActivity {
         binding.btnSent.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                notify = true;
                 String msg = binding.msg.getText().toString();
                 if(msg.length() != 0){
                     sendMessage(firebaseUser.getUid(), userId, msg);
@@ -104,7 +122,7 @@ public class MessageActivity extends AppCompatActivity {
     }
 
     //todo 38
-    private void sendMessage(String sender, String receiver, String message){
+    private void sendMessage(String sender, final String receiver, String message){
         DatabaseReference reference = FirebaseDatabase.getInstance().getReference();
 
         HashMap<String, Object> hashMap = new HashMap<>();
@@ -149,6 +167,26 @@ public class MessageActivity extends AppCompatActivity {
             }
         });
         //end todo 72
+
+        //todo 86
+        final String msg = message;
+        reference = FirebaseDatabase.getInstance().getReference("Users").child(firebaseUser.getUid());
+        reference.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                User user = dataSnapshot.getValue(User.class);
+                Log.d("MyZein", "1."+ notify);
+                if (notify) {
+                    sendNotification(receiver, user.getUsername(), msg);
+                }
+                notify = false;
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError databaseError) {
+
+            }
+        });
     }
 
     //todo 45
@@ -221,6 +259,9 @@ public class MessageActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         status("online");
+        //todo 92
+        currentUser(userId);
+        //end todo 92
     }
 
     //todo 71
@@ -229,5 +270,66 @@ public class MessageActivity extends AppCompatActivity {
         super.onPause();
         reference.removeEventListener(seenListener);
         status("offline");
+        //todo 93
+        currentUser("none");
+        //end todo 93
     }
+
+    //todo 85
+    APIService apiService;
+    public void initFCM(){
+        apiService = Client.getCLient("https://fcm.googleapis.com/").create(APIService.class);
+    }
+
+    //todo 87
+    private void sendNotification(String receiver, final String username, final String msg) {
+        Log.d("MyZein","2.");
+        DatabaseReference tokens = FirebaseDatabase.getInstance().getReference("Tokens");
+        Query query = tokens.orderByKey().equalTo(receiver);
+        query.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                Log.d("MyZein","3.");
+
+                for (DataSnapshot snapshot: dataSnapshot.getChildren()){
+                    Token token = snapshot.getValue(Token.class);
+                    Log.d("MyZein","4.");
+                    Data data = new Data(firebaseUser.getUid(), R.mipmap.ic_launcher, username + " : " + msg, "New Message", userId);
+
+                    Sender sender = new Sender(data, token.getToken());
+
+                    apiService.sendNotification(sender).enqueue(new Callback<MyResponse>() {
+                        @Override
+                        public void onResponse(Call<MyResponse> call, Response<MyResponse> response) {
+                            Log.d("MyZein", String.valueOf(response.code()));
+                            if(response.code() == 200){
+                                if (response.body().success != 1){
+                                    Toast.makeText(MessageActivity.this, "Failed", Toast.LENGTH_SHORT).show();
+                                }
+                            }
+                        }
+
+                        @Override
+                        public void onFailure(Call<MyResponse> call, Throwable t) {
+                            Log.d("MyZein","5.");
+                            Toast.makeText(MessageActivity.this, t.getMessage(), Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError databaseError) {
+
+            }
+        });
+    }
+
+    //todo 91 part 20 start
+    private void currentUser(String userId){
+        SharedPreferences.Editor editor = getSharedPreferences("PREFS", MODE_PRIVATE).edit();
+        editor.putString("currentUser", userId);
+        editor.apply();
+    }
+
 }
